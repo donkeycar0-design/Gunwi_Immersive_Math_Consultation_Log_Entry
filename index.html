@@ -153,7 +153,16 @@
 <script type="text/babel">
 const { useState, useEffect, useCallback, useMemo } = React;
 
-const ADMIN_PW = 'admin1234';
+const SUPER_ADMIN_PW = 'l2387008'; // 슈퍼 관리자 비번 (숨김)
+const TEACHER_INIT_PW = '1234';    // 강사 초기 비번
+
+// 일반 관리자 4명 (이름 + 초기비번 1234, 첫 로그인 후 변경)
+const ADMIN_ACCOUNTS = [
+    {name:'김남탁',  password:'1234', isFirst:true},
+    {name:'김유식',  password:'1234', isFirst:true},
+    {name:'사공은영',password:'1234', isFirst:true},
+    {name:'김윤희',  password:'1234', isFirst:true},
+];
 const getKSTDate = (d = new Date()) => new Date(d.getTime() + 9*3600*1000).toISOString().split('T')[0];
 const TODAY = getKSTDate();
 
@@ -184,6 +193,12 @@ const getClassLabels = (classStr) => {
 
 // ── 더미 데이터 ──
 const DUMMY = {
+    admins: [
+        {name:'김남탁',  password:'1234', isFirst:true},
+        {name:'김유식',  password:'1234', isFirst:true},
+        {name:'사공은영',password:'1234', isFirst:true},
+        {name:'김윤희',  password:'1234', isFirst:true},
+    ],
     teachers: [
         {ID:'t1', Name:'김선생', Password:'1234', Classes:'e1-mw-s,e1-mw-h,e2-mw-s,e3-mw-h'},
         {ID:'t2', Name:'이선생', Password:'5678', Classes:'e3-hg-s,e4-mw-s,e4-hg-h'},
@@ -227,6 +242,7 @@ const api = {
     get: action => new Promise(resolve => setTimeout(() => {
         const map = {
             getTeachers: DUMMY.teachers,
+            getAdmins:   DUMMY.admins,
             getNotices:  DUMMY.notices,
             getJournals: DUMMY.journals,
             getAbsences: DUMMY.absences,
@@ -235,8 +251,31 @@ const api = {
         resolve(map[action] || []);
     }, 300)),
     post: body => new Promise(resolve => setTimeout(() => {
-        // 더미 모드: 저장 성공 응답만 반환 (실제 저장 안 됨)
-        if (body.action === 'addTeacher')  DUMMY.teachers.push({ID:'t'+Date.now(), Name:body.name, Password:body.password});
+        if (body.action === 'resetTeacherPw') {
+            const t = DUMMY.teachers.find(t=>t.Name===body.name);
+            if (t) { t.Password='1234'; t.IsFirst=true; }
+        }
+        if (body.action === 'resetAdminPw') {
+            const a = DUMMY.admins.find(a=>a.name===body.name);
+            if (a) { a.password='1234'; a.isFirst=true; }
+        }
+        if (body.action === 'updateAdminPw') {
+            const a = DUMMY.admins.find(a=>a.name===body.name);
+            if (a) { a.password=body.newPw; a.isFirst=false; }
+        }
+        if (body.action === 'registerTeacher') {
+            const exists = DUMMY.teachers.find(t=>t.Name===body.name);
+            if (exists) { resolve({error:'이미 등록된 이름입니다'}); return; }
+            DUMMY.teachers.push({ID:'t'+Date.now(), Name:body.name, Password:'1234', Classes:'', IsFirst:true});
+        }
+        if (body.action === 'updateTeacherPw') {
+            const t = DUMMY.teachers.find(t=>t.Name===body.name);
+            if (t) { t.Password=body.newPw; t.IsFirst=false; }
+        }
+        if (body.action === 'updateTeacherClasses') {
+            const t = DUMMY.teachers.find(t=>t.Name===body.name);
+            if (t) t.Classes = body.classes;
+        }
         if (body.action === 'deleteTeacher') { const i=DUMMY.teachers.findIndex(t=>t.ID===body.id); if(i>=0) DUMMY.teachers.splice(i,1); }
         if (body.action === 'addNotice')   DUMMY.notices.unshift({ID:'n'+Date.now(), Title:body.title, Content:body.content, CreatedAt:new Date().toISOString()});
         if (body.action === 'deleteNotice') { const i=DUMMY.notices.findIndex(n=>n.ID===body.id); if(i>=0) DUMMY.notices.splice(i,1); }
@@ -275,25 +314,45 @@ const Toast = ({ message, type='success', onDone }) => {
 
 // ━━━ 로그인 화면 ━━━
 const LoginScreen = ({ onLogin }) => {
-    const [role, setRole]   = useState('teacher');
-    const [name, setName]   = useState('');
-    const [pw,   setPw]     = useState('');
-    const [err,  setErr]    = useState('');
+    const [name,    setName]    = useState('');
+    const [pw,      setPw]      = useState('');
+    const [err,     setErr]     = useState('');
     const [loading, setLoading] = useState(false);
 
     const handleLogin = async () => {
         setErr(''); setLoading(true);
         try {
-            if (role === 'admin') {
-                if (pw === ADMIN_PW) { onLogin({ role:'admin', name:'관리자' }); }
-                else setErr('관리자 비번이 틀렸습니다');
+            const trimName = name.trim();
+
+            // 1. 슈퍼 관리자 — 이름 없이 비번만
+            if (!trimName && pw === SUPER_ADMIN_PW) {
+                onLogin({ role:'admin', name:'관리자', isSuper:true });
+                return;
+            }
+
+            // 2. 일반 관리자 — 이름 + 비번
+            const admins = await api.get('getAdmins');
+            const foundAdmin = Array.isArray(admins) ? admins.find(a=>a.name===trimName) : null;
+            if (foundAdmin) {
+                if (foundAdmin.password !== pw) { setErr('비밀번호가 틀렸습니다'); return; }
+                onLogin({ role:'admin', name:foundAdmin.name, isFirst:foundAdmin.isFirst, isSuper:false });
+                return;
+            }
+
+            // 3. 강사 — 이름 + 비번
+            if (!trimName) { setErr('이름을 입력해 주세요'); return; }
+            const teachers = await api.get('getTeachers');
+            const foundTeacher = Array.isArray(teachers) ? teachers.find(t=>t.Name===trimName) : null;
+
+            if (!foundTeacher) {
+                // 첫 방문 강사
+                if (pw !== TEACHER_INIT_PW) { setErr('처음 로그인은 초기 비번을 사용해 주세요'); return; }
+                const res = await api.post({ action:'registerTeacher', name:trimName });
+                if (res.error) { setErr(res.error); return; }
+                onLogin({ role:'teacher', name:trimName, isFirst:true });
             } else {
-                if (!name.trim()) { setErr('이름을 입력해 주세요'); setLoading(false); return; }
-                const res = await api.get('getTeachers');
-                const teachers = Array.isArray(res) ? res : [];
-                const found = teachers.find(t => t.Name === name.trim() && t.Password === pw);
-                if (found) onLogin({ role:'teacher', name:found.Name, id:found.ID });
-                else setErr('이름 또는 비번이 틀렸습니다');
+                if (foundTeacher.Password !== pw) { setErr('비밀번호가 틀렸습니다'); return; }
+                onLogin({ role:'teacher', name:foundTeacher.Name, isFirst:foundTeacher.IsFirst||false, classes:foundTeacher.Classes||'' });
             }
         } catch(e) { setErr('연결 오류: '+e.message); }
         finally { setLoading(false); }
@@ -306,24 +365,175 @@ const LoginScreen = ({ onLogin }) => {
                     <div className="logo-icon"><Icon name="sparkles" size={22}/></div>
                     <div><div className="logo-title">군위몰입수학</div><div className="logo-sub">Staff Portal</div></div>
                 </div>
-                <div className="role-tabs">
-                    <button className={`role-tab ${role==='teacher'?'active':''}`} onClick={()=>setRole('teacher')}>강사 로그인</button>
-                    <button className={`role-tab ${role==='admin'?'active':''}`} onClick={()=>setRole('admin')}>관리자 로그인</button>
+                <div style={{marginBottom:20,fontSize:13,fontWeight:700,color:'#94a3b8',textAlign:'center'}}>
+                    이름과 비밀번호를 입력해 주세요
                 </div>
-                {role === 'teacher' && (
-                    <input className="login-input" placeholder="강사 이름" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()}/>
-                )}
-                <input className="login-input" type="password" placeholder="비밀번호" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()}/>
+                <input className="login-input" placeholder="이름" value={name}
+                    onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()}/>
+                <input className="login-input" type="password" placeholder="비밀번호"
+                    value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()}/>
                 <button className="login-btn" onClick={handleLogin} disabled={loading}>
-                    {loading ? '확인 중...' : '로그인'}
+                    {loading?'확인 중...':'로그인'}
                 </button>
                 {err && <div className="login-err">{err}</div>}
-                <div style={{marginTop:20,padding:'12px 16px',background:'#f8fafc',borderRadius:14,fontSize:12,fontWeight:700,color:'#64748b',lineHeight:1.8}}>
-                    <div style={{fontWeight:900,color:'#94a3b8',marginBottom:4}}>🔍 미리보기 계정</div>
-                    <div>강사: <span style={{color:'#f97316'}}>김선생 / 1234</span></div>
-                    <div>강사: <span style={{color:'#f97316'}}>이선생 / 5678</span></div>
-                    <div>관리자: <span style={{color:'#0f172a'}}>비번 admin1234</span></div>
+                <div style={{marginTop:16,padding:'12px 16px',background:'#fff7ed',borderRadius:14,fontSize:12,fontWeight:700,color:'#92400e',lineHeight:1.8}}>
+                    <div style={{fontWeight:900,marginBottom:6}}>첫 로그인 안내</div>
+                    <div>강사 · 관리자: <span style={{color:'#f97316',fontWeight:900}}>이름 / 1234</span></div>
+                    <div>슈퍼관리자: <span style={{color:'#0f172a',fontWeight:900}}>비번만 입력</span></div>
+                    <div style={{color:'#a16207',marginTop:4,fontSize:11}}>로그인 후 비번 변경 필수</div>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+// ━━━ 관리자 첫 로그인 셋업 (비번 변경만) ━━━
+const AdminSetupScreen = ({ user, onDone }) => {
+    const [newPw,     setNewPw]     = useState('');
+    const [confirmPw, setConfirmPw] = useState('');
+    const [err,       setErr]       = useState('');
+    const [saving,    setSaving]    = useState(false);
+
+    const handleFinish = async () => {
+        if (newPw.length < 4) { setErr('비번은 4자리 이상 입력해 주세요'); return; }
+        if (newPw !== confirmPw) { setErr('비번이 일치하지 않습니다'); return; }
+        setSaving(true);
+        try {
+            await api.post({ action:'updateAdminPw', name:user.name, newPw });
+            onDone({ ...user, isFirst:false });
+        } catch(e) { setErr('저장 실패'); }
+        finally { setSaving(false); }
+    };
+
+    return (
+        <div className="login-wrap" style={{background:'#F5F6FA'}}>
+            <div className="login-box">
+                <div className="login-logo">
+                    <div className="logo-icon"><Icon name="sparkles" size={22}/></div>
+                    <div><div className="logo-title">군위몰입수학</div><div className="logo-sub">관리자 첫 로그인</div></div>
+                </div>
+                <div style={{fontSize:13,fontWeight:700,color:'#64748b',marginBottom:20,textAlign:'center'}}>
+                    <span style={{fontWeight:900,color:'#0f172a'}}>{user.name}</span> 관리자님<br/>
+                    새 비밀번호를 설정해 주세요
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:16}}>
+                    <input className="login-input" type="password" placeholder="새 비밀번호 (4자리 이상)"
+                        value={newPw} onChange={e=>setNewPw(e.target.value)} style={{marginBottom:0}}/>
+                    <input className="login-input" type="password" placeholder="비밀번호 확인"
+                        value={confirmPw} onChange={e=>setConfirmPw(e.target.value)}
+                        onKeyDown={e=>e.key==='Enter'&&handleFinish()} style={{marginBottom:0}}/>
+                </div>
+                {err && <div className="login-err" style={{marginBottom:10}}>{err}</div>}
+                <button className="login-btn" onClick={handleFinish} disabled={saving}>
+                    {saving?'저장 중...':'설정 완료 →'}
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// ━━━ 첫 로그인 셋업 화면 (강사 — 비번변경 + 담당반 선택) ━━━
+const SetupScreen = ({ user, onDone }) => {
+    const [step,      setStep]      = useState(1); // 1:비번변경 2:담당반선택
+    const [newPw,     setNewPw]     = useState('');
+    const [confirmPw, setConfirmPw] = useState('');
+    const [classes,   setClasses]   = useState([]);
+    const [err,       setErr]       = useState('');
+    const [saving,    setSaving]    = useState(false);
+
+    const toggleClass = id =>
+        setClasses(prev => prev.includes(id) ? prev.filter(c=>c!==id) : [...prev, id]);
+
+    const handlePwNext = () => {
+        if (newPw.length < 4) { setErr('비번은 4자리 이상 입력해 주세요'); return; }
+        if (newPw !== confirmPw) { setErr('비번이 일치하지 않습니다'); return; }
+        setErr(''); setStep(2);
+    };
+
+    const handleFinish = async () => {
+        setSaving(true);
+        try {
+            await api.post({ action:'updateTeacherPw', name:user.name, newPw });
+            await api.post({ action:'updateTeacherClasses', name:user.name, classes:classes.join(',') });
+            onDone({ ...user, isFirst:false, classes:classes.join(',') });
+        } catch(e) { setErr('저장 실패'); }
+        finally { setSaving(false); }
+    };
+
+    return (
+        <div className="login-wrap" style={{background:'#F5F6FA'}}>
+            <div className="login-box" style={{maxWidth:440}}>
+                <div className="login-logo">
+                    <div className="logo-icon"><Icon name="sparkles" size={22}/></div>
+                    <div><div className="logo-title">군위몰입수학</div><div className="logo-sub">첫 로그인 설정</div></div>
+                </div>
+
+                {/* 스텝 인디케이터 */}
+                <div style={{display:'flex',gap:8,marginBottom:28}}>
+                    {['비밀번호 변경','담당반 선택'].map((s,i)=>(
+                        <div key={i} style={{flex:1,padding:'8px 12px',borderRadius:12,background:step===i+1?'#0f172a':step>i+1?'#10b981':'#f8fafc',color:step>=i+1?'#fff':'#94a3b8',fontSize:12,fontWeight:900,textAlign:'center',transition:'all .2s'}}>
+                            {step>i+1?'✓ ':''}{s}
+                        </div>
+                    ))}
+                </div>
+
+                {step === 1 && (
+                    <>
+                        <div style={{fontSize:13,fontWeight:700,color:'#64748b',marginBottom:20,textAlign:'center'}}>
+                            <span style={{fontWeight:900,color:'#0f172a'}}>{user.name}</span> 강사님, 새 비밀번호를 설정해 주세요
+                        </div>
+                        <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:16}}>
+                            <input className="login-input" type="password" placeholder="새 비밀번호 (4자리 이상)" value={newPw} onChange={e=>setNewPw(e.target.value)} style={{marginBottom:0}}/>
+                            <input className="login-input" type="password" placeholder="비밀번호 확인" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handlePwNext()} style={{marginBottom:0}}/>
+                        </div>
+                        {err && <div className="login-err" style={{marginBottom:10}}>{err}</div>}
+                        <button className="login-btn" onClick={handlePwNext}>다음 →</button>
+                    </>
+                )}
+
+                {step === 2 && (
+                    <>
+                        <div style={{fontSize:13,fontWeight:700,color:'#64748b',marginBottom:16,textAlign:'center'}}>
+                            담당 수업을 선택해 주세요
+                            <span style={{marginLeft:8,color:'#f97316',fontWeight:900}}>{classes.length}개 선택</span>
+                        </div>
+                        <div style={{display:'flex',flexDirection:'column',gap:10,maxHeight:360,overflowY:'auto',marginBottom:16}}>
+                            {GRADE_GROUPS.map(g=>(
+                                <div key={g.grade}>
+                                    <div style={{fontSize:11,fontWeight:900,color:'#64748b',marginBottom:6,padding:'3px 8px',background:'#f1f5f9',borderRadius:8,display:'inline-block'}}>{g.grade}</div>
+                                    <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6}}>
+                                        {g.classes.map(c=>{
+                                            const checked = classes.includes(c.id);
+                                            const dayPart  = c.id.includes('-mw-')?'월목':'화금';
+                                            const typePart = c.id.endsWith('-s')?'수반':'학반';
+                                            return (
+                                                <button key={c.id} onClick={()=>toggleClass(c.id)} style={{
+                                                    display:'flex',alignItems:'center',gap:8,padding:'10px 12px',borderRadius:12,
+                                                    border:`2px solid ${checked?'#0f172a':'#f1f5f9'}`,
+                                                    background:checked?'#0f172a':'#f8fafc',
+                                                    color:checked?'#fff':'#64748b',
+                                                    fontSize:12,fontWeight:900,transition:'all .15s',
+                                                }}>
+                                                    <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${checked?'#fff':'#cbd5e1'}`,background:checked?'#f97316':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                                        {checked&&<Icon name="check" size={10} style={{color:'#fff'}}/>}
+                                                    </div>
+                                                    {dayPart} {typePart}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        {err && <div className="login-err" style={{marginBottom:10}}>{err}</div>}
+                        <div style={{display:'flex',gap:8}}>
+                            <button onClick={()=>setStep(1)} style={{flex:1,padding:14,borderRadius:14,fontSize:14,fontWeight:900,background:'#f8fafc',color:'#94a3b8'}}>← 이전</button>
+                            <button className="login-btn" style={{flex:2,marginTop:0}} onClick={handleFinish} disabled={saving}>
+                                {saving?'저장 중...':'설정 완료 →'}
+                            </button>
+                        </div>
+                    </>
+                )}
             </div>
         </div>
     );
@@ -489,10 +699,10 @@ const AdminApp = ({ user, onLogout }) => {
                 </nav>
                 <div className="sidebar-footer">
                     <div className="user-info-card">
-                        <div className="user-avatar admin">관</div>
+                        <div className="user-avatar admin">{user.isSuper ? '관' : user.name[0]}</div>
                         <div>
-                            <div style={{fontSize:13,fontWeight:900,color:'#1e293b'}}>관리자</div>
-                            <div style={{fontSize:11,fontWeight:700,color:'#94a3b8'}}>Admin</div>
+                            <div style={{fontSize:13,fontWeight:900,color:'#1e293b'}}>{user.name} 관리자</div>
+                            <div style={{fontSize:11,fontWeight:700,color:'#94a3b8'}}>{user.isSuper?'최고 관리자':'관리자'}</div>
                         </div>
                     </div>
                     <button onClick={onLogout} style={{display:'flex',alignItems:'center',gap:6,padding:'10px 14px',borderRadius:14,fontSize:12,fontWeight:700,color:'#94a3b8',width:'100%'}}>
@@ -513,7 +723,7 @@ const AdminApp = ({ user, onLogout }) => {
                 {loading ? <div className="full-center"><div className="spinner"/></div> : (
                     <>
                         {view==='dashboard' && <AdminDashboard journals={journals} counsels={counsels} absences={absences} notices={notices} teachers={teachers} today={today}/>}
-                        {view==='teachers'  && <TeacherMgr teachers={teachers} showToast={showToast} reload={loadAll}/>}
+                        {view==='teachers'  && <TeacherMgr teachers={teachers} admins={admins} showToast={showToast} reload={loadAll}/>}
                         {view==='notice'    && <NoticeView notices={notices} isAdmin={true} showToast={showToast} reload={loadAll}/>}
                         {view==='journal'   && <JournalAllView journals={journals}/>}
                         {view==='absence'   && <AbsenceAllView absences={absences}/>}
@@ -857,32 +1067,30 @@ const AdminDashboard = ({ journals, counsels, absences, notices, teachers, today
     );
 };
 
-// ━━━ 강사 계정 관리 ━━━
-const TeacherMgr = ({ teachers, showToast, reload }) => {
-    const [showModal,  setShowModal]  = useState(false);
-    const [form,       setForm]       = useState({ name:'', password:'', classes:[] });
-    const [saving,     setSaving]     = useState(false);
-    const [expanded,   setExpanded]   = useState(null); // 담당반 펼쳐보기
+// ━━━ 강사/관리자 계정 관리 ━━━
+const TeacherMgr = ({ teachers, admins, showToast, reload }) => {
+    const [expanded,  setExpanded]  = useState(null);
+    const [tab,       setTab]       = useState('teacher'); // teacher | admin
 
-    const toggleClass = (id) => {
-        setForm(f => ({
-            ...f,
-            classes: f.classes.includes(id) ? f.classes.filter(c=>c!==id) : [...f.classes, id]
-        }));
-    };
-
-    const handleAdd = async () => {
-        if (!form.name.trim()||!form.password.trim()) return;
-        setSaving(true);
+    const handleResetTeacherPw = async (name) => {
+        if (!confirm(`${name} 강사의 비번을 1234로 초기화할까요?`)) return;
         try {
-            await api.post({ action:'addTeacher', name:form.name.trim(), password:form.password, classes:form.classes.join(',') });
-            showToast(`${form.name} 강사 계정이 생성되었습니다`);
-            setForm({name:'',password:'',classes:[]}); setShowModal(false); reload();
-        } catch(e){ showToast('생성 실패','error'); }
-        finally { setSaving(false); }
+            await api.post({ action:'resetTeacherPw', name });
+            showToast(`${name} 강사 비번이 1234로 초기화됐습니다`);
+            reload();
+        } catch(e){ showToast('초기화 실패','error'); }
     };
 
-    const handleDelete = async (id, name) => {
+    const handleResetAdminPw = async (name) => {
+        if (!confirm(`${name} 관리자의 비번을 1234로 초기화할까요?`)) return;
+        try {
+            await api.post({ action:'resetAdminPw', name });
+            showToast(`${name} 관리자 비번이 1234로 초기화됐습니다`);
+            reload();
+        } catch(e){ showToast('초기화 실패','error'); }
+    };
+
+    const handleDeleteTeacher = async (id, name) => {
         if (!confirm(`${name} 강사 계정을 삭제하시겠습니까?`)) return;
         try { await api.post({action:'deleteTeacher',id}); showToast('삭제되었습니다'); reload(); }
         catch(e){ showToast('삭제 실패','error'); }
@@ -890,120 +1098,102 @@ const TeacherMgr = ({ teachers, showToast, reload }) => {
 
     return (
         <div className="fade-in" style={{display:'flex',flexDirection:'column',gap:12,paddingBottom:40}}>
-            <div style={{display:'flex',justifyContent:'flex-end'}}>
-                <button className="btn-primary" onClick={()=>setShowModal(true)}>
-                    <Icon name="plus" size={15}/> 강사 계정 추가
+            {/* 탭 */}
+            <div style={{display:'flex',gap:8}}>
+                <button onClick={()=>setTab('teacher')} style={{flex:1,padding:'10px',borderRadius:14,fontSize:13,fontWeight:900,background:tab==='teacher'?'#0f172a':'#f8fafc',color:tab==='teacher'?'#fff':'#94a3b8',transition:'all .15s'}}>
+                    강사 계정
+                </button>
+                <button onClick={()=>setTab('admin')} style={{flex:1,padding:'10px',borderRadius:14,fontSize:13,fontWeight:900,background:tab==='admin'?'#f97316':'#f8fafc',color:tab==='admin'?'#fff':'#94a3b8',transition:'all .15s'}}>
+                    관리자 계정
                 </button>
             </div>
 
-            {teachers.length===0
-                ? <div className="empty-box"><p style={{fontWeight:700}}>등록된 강사가 없습니다</p></div>
-                : teachers.map(t => {
-                    const labels = getClassLabels(t.Classes);
-                    const isExp  = expanded === t.ID;
-                    return (
-                        <div key={t.ID} className="list-item" style={{gap:12}}>
-                            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            {/* 안내 */}
+            <div style={{padding:'12px 16px',background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:14,fontSize:12,fontWeight:700,color:'#92400e'}}>
+                비번 분실 시 <span style={{fontWeight:900}}>비번 초기화</span> 버튼을 누르면 <span style={{color:'#f97316',fontWeight:900}}>1234</span>로 리셋됩니다.
+                본인이 재로그인 후 새 비번을 설정하면 됩니다.
+            </div>
+
+            {/* 강사 목록 */}
+            {tab === 'teacher' && (
+                <>
+                    {teachers.length===0
+                        ? <div className="empty-box"><p style={{fontWeight:700}}>등록된 강사가 없습니다</p><span style={{fontSize:13}}>강사가 첫 로그인하면 자동으로 표시됩니다</span></div>
+                        : teachers.map(t => {
+                            const labels = getClassLabels(t.Classes);
+                            const isExp  = expanded === t.ID;
+                            const isSetup = t.IsFirst;
+                            return (
+                                <div key={t.ID} className="list-item" style={{gap:12}}>
+                                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                                        <div style={{display:'flex',alignItems:'center',gap:10}}>
+                                            <div style={{width:40,height:40,borderRadius:'50%',background:isSetup?'#94a3b8':'#0f172a',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:900}}>{t.Name[0]}</div>
+                                            <div>
+                                                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                                                    <span style={{fontSize:14,fontWeight:900,color:'#1e293b'}}>{t.Name} 강사</span>
+                                                    {isSetup && <span className="badge badge-warn">설정 미완료</span>}
+                                                </div>
+                                                <div style={{fontSize:11,fontWeight:700,color:'#94a3b8'}}>담당 {labels.length}개 반</div>
+                                            </div>
+                                        </div>
+                                        <div style={{display:'flex',alignItems:'center',gap:6}}>
+                                            <button onClick={()=>setExpanded(isExp?null:t.ID)}
+                                                style={{fontSize:11,fontWeight:900,padding:'6px 10px',borderRadius:10,background:isExp?'#f1f5f9':'#f8fafc',color:'#64748b'}}>
+                                                {isExp?'접기':'담당반'}
+                                            </button>
+                                            <button onClick={()=>handleResetTeacherPw(t.Name)}
+                                                style={{fontSize:11,fontWeight:900,padding:'6px 10px',borderRadius:10,background:'#fff7ed',color:'#f97316',border:'1px solid #fed7aa'}}>
+                                                비번 초기화
+                                            </button>
+                                            <button onClick={()=>handleDeleteTeacher(t.ID,t.Name)} style={{color:'#cbd5e1',padding:6}}>
+                                                <Icon name="trash" size={14}/>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {isExp && (
+                                        <div style={{background:'#f8fafc',borderRadius:12,padding:12}}>
+                                            {labels.length===0
+                                                ? <div style={{fontSize:12,color:'#94a3b8',fontWeight:700}}>담당 반 없음 (설정 완료 후 표시)</div>
+                                                : <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                                                    {labels.map((l,i)=>(
+                                                        <span key={i} style={{fontSize:11,fontWeight:900,padding:'4px 10px',borderRadius:10,background:'#0f172a',color:'#fff'}}>{l}</span>
+                                                    ))}
+                                                  </div>
+                                            }
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })
+                    }
+                </>
+            )}
+
+            {/* 관리자 목록 */}
+            {tab === 'admin' && (
+                <>
+                    {(!admins||admins.length===0)
+                        ? <div className="empty-box"><p style={{fontWeight:700}}>관리자가 없습니다</p></div>
+                        : admins.map((a,i) => (
+                            <div key={i} className="list-item" style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
                                 <div style={{display:'flex',alignItems:'center',gap:10}}>
-                                    <div style={{width:40,height:40,borderRadius:'50%',background:'#0f172a',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:900}}>{t.Name[0]}</div>
+                                    <div style={{width:40,height:40,borderRadius:'50%',background:'#f97316',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,fontWeight:900}}>{a.name[0]}</div>
                                     <div>
-                                        <div style={{fontSize:14,fontWeight:900,color:'#1e293b'}}>{t.Name} 강사</div>
-                                        <div style={{fontSize:11,fontWeight:700,color:'#94a3b8'}}>담당 {labels.length}개 반 · 비번 {'●'.repeat(Math.min(t.Password?.length||4,6))}</div>
+                                        <div style={{display:'flex',alignItems:'center',gap:6}}>
+                                            <span style={{fontSize:14,fontWeight:900,color:'#1e293b'}}>{a.name} 관리자</span>
+                                            {a.isFirst && <span className="badge badge-warn">비번 미변경</span>}
+                                        </div>
+                                        <div style={{fontSize:11,fontWeight:700,color:'#94a3b8'}}>일반 관리자</div>
                                     </div>
                                 </div>
-                                <div style={{display:'flex',alignItems:'center',gap:6}}>
-                                    <button onClick={()=>setExpanded(isExp?null:t.ID)}
-                                        style={{fontSize:11,fontWeight:900,padding:'6px 12px',borderRadius:10,background:isExp?'#f1f5f9':'#f8fafc',color:'#64748b'}}>
-                                        {isExp?'접기':'담당반 보기'}
-                                    </button>
-                                    <button onClick={()=>handleDelete(t.ID,t.Name)} style={{color:'#cbd5e1',padding:8}}>
-                                        <Icon name="trash" size={15}/>
-                                    </button>
-                                </div>
+                                <button onClick={()=>handleResetAdminPw(a.name)}
+                                    style={{fontSize:11,fontWeight:900,padding:'8px 12px',borderRadius:10,background:'#fff7ed',color:'#f97316',border:'1px solid #fed7aa'}}>
+                                    비번 초기화
+                                </button>
                             </div>
-
-                            {/* 담당반 목록 */}
-                            {isExp && (
-                                <div style={{background:'#f8fafc',borderRadius:14,padding:14}}>
-                                    {labels.length===0
-                                        ? <div style={{fontSize:12,color:'#94a3b8',fontWeight:700}}>담당 반이 없습니다</div>
-                                        : <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                                            {labels.map((l,i) => (
-                                                <span key={i} style={{fontSize:11,fontWeight:900,padding:'4px 10px',borderRadius:10,background:'#0f172a',color:'#fff'}}>{l}</span>
-                                            ))}
-                                          </div>
-                                    }
-                                </div>
-                            )}
-                        </div>
-                    );
-                })
-            }
-
-            {/* 계정 추가 모달 */}
-            {showModal && (
-                <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
-                    <div className="modal-box" style={{maxWidth:500,maxHeight:'90dvh',overflowY:'auto'}}>
-                        <div className="modal-title">강사 계정 추가</div>
-
-                        <div><div className="form-label">강사 이름</div>
-                            <input className="form-input" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="강사 이름 입력"/>
-                        </div>
-                        <div><div className="form-label">비밀번호</div>
-                            <input className="form-input" type="password" value={form.password} onChange={e=>setForm(f=>({...f,password:e.target.value}))} placeholder="비밀번호 설정"/>
-                        </div>
-
-                        {/* 담당반 선택 */}
-                        <div>
-                            <div className="form-label" style={{marginBottom:10}}>
-                                담당 수업 배정
-                                <span style={{marginLeft:8,fontWeight:700,color:'#f97316',textTransform:'none',letterSpacing:0}}>
-                                    {form.classes.length}개 선택
-                                </span>
-                            </div>
-                            <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                                {GRADE_GROUPS.map(g => (
-                                    <div key={g.grade}>
-                                        {/* 학년 헤더 */}
-                                        <div style={{fontSize:11,fontWeight:900,color:'#64748b',marginBottom:6,padding:'4px 8px',background:'#f1f5f9',borderRadius:8,display:'inline-block'}}>
-                                            {g.grade}
-                                        </div>
-                                        <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6}}>
-                                            {g.classes.map(c => {
-                                                const checked = form.classes.includes(c.id);
-                                                // 라벨에서 월목/화금, 수반/학반 추출
-                                                const dayPart  = c.id.includes('-mw-') ? '월목' : '화금';
-                                                const typePart = c.id.endsWith('-s')   ? '수반' : '학반';
-                                                return (
-                                                    <button key={c.id} onClick={()=>toggleClass(c.id)}
-                                                        style={{
-                                                            display:'flex',alignItems:'center',gap:8,
-                                                            padding:'10px 12px',borderRadius:12,
-                                                            border:`2px solid ${checked?'#0f172a':'#f1f5f9'}`,
-                                                            background: checked?'#0f172a':'#f8fafc',
-                                                            color: checked?'#fff':'#64748b',
-                                                            fontSize:12,fontWeight:900,textAlign:'left',
-                                                            transition:'all .15s',
-                                                        }}>
-                                                        <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${checked?'#fff':'#cbd5e1'}`,background:checked?'#f97316':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                                                            {checked && <Icon name="check" size={10} style={{color:'#fff'}}/>}
-                                                        </div>
-                                                        {dayPart} {typePart}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="modal-btns">
-                            <button className="btn-cancel" onClick={()=>{setShowModal(false);setForm({name:'',password:'',classes:[]});}}>취소</button>
-                            <button className="btn-confirm" onClick={handleAdd} disabled={saving}>{saving?'생성 중...':'계정 생성'}</button>
-                        </div>
-                    </div>
-                </div>
+                        ))
+                    }
+                </>
             )}
         </div>
     );
@@ -1120,10 +1310,15 @@ const CounselAllView = ({ counsels }) => {
 const App = () => {
     const [user, setUser] = useState(null);
 
-    const handleLogin  = (u) => setUser(u);
-    const handleLogout = () => setUser(null);
+    const handleLogin     = (u) => setUser(u);
+    const handleLogout    = () => setUser(null);
+    const handleSetupDone = (u) => setUser(u);
 
     if (!user) return <LoginScreen onLogin={handleLogin}/>;
+    // 강사 첫 로그인 → 셋업 (비번변경 + 담당반 선택)
+    if (user.role==='teacher' && user.isFirst) return <SetupScreen user={user} onDone={handleSetupDone}/>;
+    // 일반 관리자 첫 로그인 → 비번만 변경 (담당반 없음)
+    if (user.role==='admin' && !user.isSuper && user.isFirst) return <AdminSetupScreen user={user} onDone={handleSetupDone}/>;
     if (user.role==='admin') return <AdminApp user={user} onLogout={handleLogout}/>;
     return <TeacherApp user={user} onLogout={handleLogout}/>;
 };
