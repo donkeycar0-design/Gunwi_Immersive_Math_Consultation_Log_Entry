@@ -1043,7 +1043,7 @@ const AdminDashboard = ({ journals, counsels, absences, notices, teachers, today
                 {notices.slice(0,3).map(n=>(
                     <div key={n.ID} className="notice-item">
                         <div className="notice-title">{n.Title}</div>
-                        <div className="notice-body">{n.Content}</div>
+                        <div className="notice-body" style={{whiteSpace:'pre-wrap'}}>{n.Content}</div>
                         <div className="notice-date">{n.CreatedAt?formatDateTime(n.CreatedAt):''}</div>
                     </div>
                 ))}
