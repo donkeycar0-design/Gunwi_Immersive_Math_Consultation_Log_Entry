@@ -697,7 +697,8 @@ const AdminApp = ({ user, onLogout }) => {
 const NoticeView = ({ notices, isAdmin, showToast, reload }) => {
     const [showModal, setShowModal] = useState(false);
     const [form, setForm] = useState({ title:'', content:'' });
-    const [saving, setSaving] = useState(false);
+    const [saving,    setSaving]    = useState(false);
+    const [editTarget, setEditTarget] = useState(null); // 수정할 공지
 
     const sorted = [...notices].sort((a,b) => new Date(b.CreatedAt)-new Date(a.CreatedAt));
 
@@ -705,11 +706,25 @@ const NoticeView = ({ notices, isAdmin, showToast, reload }) => {
         if (!form.title.trim()||!form.content.trim()) return;
         setSaving(true);
         try {
-            await api.post({ action:'addNotice', ...form });
-            showToast('공지사항이 등록되었습니다');
+            if (editTarget) {
+                // 수정: 기존 삭제 후 새로 추가
+                await api.post({ action:'deleteNotice', id:editTarget });
+                await api.post({ action:'addNotice', ...form });
+                showToast('공지사항이 수정되었습니다');
+                setEditTarget(null);
+            } else {
+                await api.post({ action:'addNotice', ...form });
+                showToast('공지사항이 등록되었습니다');
+            }
             setForm({title:'',content:''}); setShowModal(false); reload();
         } catch(e){ showToast('저장 실패','error'); }
         finally { setSaving(false); }
+    };
+
+    const handleEdit = (n) => {
+        setForm({title:n.Title, content:n.Content});
+        setEditTarget(n.ID);
+        setShowModal(true);
     };
 
     const handleDelete = async (id) => {
@@ -722,34 +737,48 @@ const NoticeView = ({ notices, isAdmin, showToast, reload }) => {
         <div className="fade-in" style={{display:'flex',flexDirection:'column',gap:12,paddingBottom:40}}>
             {isAdmin && (
                 <div style={{display:'flex',justifyContent:'flex-end',marginBottom:4}}>
-                    <button className="btn-primary btn-blue" onClick={()=>setShowModal(true)}>
+                    <button className="btn-primary btn-blue" onClick={()=>{setForm({title:'',content:''});setEditTarget(null);setShowModal(true);}}>
                         <Icon name="plus" size={15}/> 공지 작성
                     </button>
                 </div>
             )}
             {sorted.length===0 ? <div className="empty-box"><p style={{fontWeight:700}}>공지사항이 없습니다</p></div> :
                 sorted.map(n => (
-                    <div key={n.ID} className="notice-item" style={{position:'relative'}}>
+                    <div key={n.ID} className="notice-item" style={{position:'relative',paddingRight: isAdmin?60:20}}>
                         <div className="notice-title">{n.Title}</div>
-                        <div className="notice-body">{n.Content}</div>
+                        {/* ✅ 줄바꿈 적용 */}
+                        <div className="notice-body" style={{whiteSpace:'pre-wrap'}}>{n.Content}</div>
                         <div className="notice-date">{n.CreatedAt ? formatDateTime(n.CreatedAt) : ''}</div>
                         {isAdmin && (
-                            <button onClick={()=>handleDelete(n.ID)} style={{position:'absolute',top:12,right:12,color:'#cbd5e1',padding:4}}>
-                                <Icon name="trash" size={14}/>
-                            </button>
+                            <div style={{position:'absolute',top:12,right:12,display:'flex',gap:4}}>
+                                {/* ✅ 수정 버튼 추가 */}
+                                <button onClick={()=>handleEdit(n)} style={{color:'#94a3b8',padding:4}} title="수정">
+                                    <Icon name="pencil" size={14}/>
+                                </button>
+                                <button onClick={()=>handleDelete(n.ID)} style={{color:'#cbd5e1',padding:4}} title="삭제">
+                                    <Icon name="trash" size={14}/>
+                                </button>
+                            </div>
                         )}
                     </div>
                 ))
             }
             {showModal && (
-                <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowModal(false)}>
+                <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&(setShowModal(false),setEditTarget(null))}>
                     <div className="modal-box">
-                        <div className="modal-title">공지사항 작성</div>
+                        <div className="modal-title">{editTarget?'공지사항 수정':'공지사항 작성'}</div>
                         <div><div className="form-label">제목</div><input className="form-input" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="공지 제목"/></div>
-                        <div><div className="form-label">내용</div><textarea className="form-textarea" value={form.content} onChange={e=>setForm(f=>({...f,content:e.target.value}))} placeholder="공지 내용을 입력해 주세요"/></div>
+                        <div><div className="form-label">내용</div>
+                            <textarea className="form-textarea" value={form.content}
+                                onChange={e=>setForm(f=>({...f,content:e.target.value}))}
+                                placeholder="공지 내용을 입력해 주세요&#10;Enter 키로 줄바꿈 가능합니다"
+                                style={{minHeight:140}}/>
+                        </div>
                         <div className="modal-btns">
-                            <button className="btn-cancel" onClick={()=>setShowModal(false)}>취소</button>
-                            <button className="btn-confirm btn-blue" style={{background:'#3b82f6'}} onClick={handleSave} disabled={saving}>{saving?'저장 중...':'등록'}</button>
+                            <button className="btn-cancel" onClick={()=>{setShowModal(false);setEditTarget(null);}}>취소</button>
+                            <button className="btn-confirm btn-blue" style={{background:'#3b82f6'}} onClick={handleSave} disabled={saving}>
+                                {saving?'저장 중...':editTarget?'수정':'등록'}
+                            </button>
                         </div>
                     </div>
                 </div>
