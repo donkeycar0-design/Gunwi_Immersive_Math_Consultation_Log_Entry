@@ -166,6 +166,30 @@ const ADMIN_ACCOUNTS = [
 const getKSTDate = (d = new Date()) => new Date(d.getTime() + 9*3600*1000).toISOString().split('T')[0];
 const TODAY = getKSTDate();
 
+// ✅ 날짜 정규화 - ISO 문자열을 KST 기준 yyyy-MM-dd 로 변환
+const normalizeDate = val => {
+    if (!val) return '';
+    const s = String(val).replace(/^'+/, '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    // ISO 문자열이면 KST 변환
+    if (s.includes('T') || s.includes('Z')) {
+        return getKSTDate(new Date(s));
+    }
+    return s.substring(0, 10);
+};
+
+// ✅ 날짜/시각 표시 - KST 기준
+const formatDateTime = val => {
+    if (!val) return '—';
+    try { return new Date(val).toLocaleString('ko-KR', {timeZone:'Asia/Seoul'}); }
+    catch(e) { return String(val); }
+};
+
+const formatDate = val => {
+    if (!val) return '—';
+    return normalizeDate(val);
+};
+
 // ── 전체 분반 목록 ──
 const ALL_CLASSES = (() => {
     const out = [];
@@ -708,7 +732,7 @@ const NoticeView = ({ notices, isAdmin, showToast, reload }) => {
                     <div key={n.ID} className="notice-item" style={{position:'relative'}}>
                         <div className="notice-title">{n.Title}</div>
                         <div className="notice-body">{n.Content}</div>
-                        <div className="notice-date">{n.CreatedAt ? new Date(n.CreatedAt).toLocaleString('ko-KR') : ''}</div>
+                        <div className="notice-date">{n.CreatedAt ? formatDateTime(n.CreatedAt) : ''}</div>
                         {isAdmin && (
                             <button onClick={()=>handleDelete(n.ID)} style={{position:'absolute',top:12,right:12,color:'#cbd5e1',padding:4}}>
                                 <Icon name="trash" size={14}/>
@@ -767,7 +791,7 @@ const JournalView = ({ journals, user, today, showToast, reload }) => {
                 myJournals.map(j=>(
                     <div key={j.ID} className="list-item">
                         <div className="list-meta">
-                            <span className="badge badge-done">{j.Date}</span>
+                            <span className="badge badge-done">{formatDate(j.Date)}</span>
                             <span>{j.TeacherName}</span>
                         </div>
                         <div className="list-content">{j.Content}</div>
@@ -829,7 +853,7 @@ const AbsenceView = ({ absences, user, today, showToast, reload }) => {
                 myAbsences.map(a=>(
                     <div key={a.ID} className="list-item">
                         <div className="list-meta">
-                            <span className="badge badge-new">{a.Date}</span>
+                            <span className="badge badge-new">{formatDate(a.Date)}</span>
                             <span style={{fontWeight:900,color:'#1e293b'}}>{a.StudentName}</span>
                             {a.ClassName && <span style={{color:'#94a3b8'}}>{a.ClassName}</span>}
                         </div>
@@ -900,7 +924,7 @@ const CounselView = ({ counsels, user, today, showToast, reload }) => {
                 myCounsels.map(c=>(
                     <div key={c.ID} className="list-item">
                         <div className="list-meta">
-                            <span className="badge badge-blue">{c.Date}</span>
+                            <span className="badge badge-blue">{formatDate(c.Date)}</span>
                             <span style={{fontWeight:900,color:'#1e293b'}}>{c.StudentName}</span>
                             {c.ParentName && <span>학부모: {c.ParentName}</span>}
                         </div>
@@ -930,10 +954,10 @@ const CounselView = ({ counsels, user, today, showToast, reload }) => {
 
 // ━━━ 관리자 대시보드 ━━━
 const AdminDashboard = ({ journals, counsels, absences, notices, teachers, today }) => {
-    const todayJournals = journals.filter(j=>j.Date===today);
-    const todayAbsences = absences.filter(a=>a.Date===today);
+    const todayJournals = journals.filter(j=>normalizeDate(j.Date)===today);
+    const todayAbsences = absences.filter(a=>normalizeDate(a.Date)===today);
     const thisMonth = today.substring(0,7);
-    const monthCounsels = counsels.filter(c=>c.Date&&c.Date.startsWith(thisMonth));
+    const monthCounsels = counsels.filter(c=>c.Date&&normalizeDate(c.Date).startsWith(thisMonth));
 
     return (
         <div className="fade-in" style={{display:'flex',flexDirection:'column',gap:20,paddingBottom:40}}>
@@ -991,7 +1015,7 @@ const AdminDashboard = ({ journals, counsels, absences, notices, teachers, today
                     <div key={n.ID} className="notice-item">
                         <div className="notice-title">{n.Title}</div>
                         <div className="notice-body">{n.Content}</div>
-                        <div className="notice-date">{n.CreatedAt?new Date(n.CreatedAt).toLocaleString('ko-KR'):''}</div>
+                        <div className="notice-date">{n.CreatedAt?formatDateTime(n.CreatedAt):''}</div>
                     </div>
                 ))}
             </div>
@@ -1182,7 +1206,7 @@ const JournalAllView = ({ journals }) => {
                 filtered.map(j=>(
                     <div key={j.ID} className="list-item">
                         <div className="list-meta">
-                            <span className="badge badge-done">{j.Date}</span>
+                            <span className="badge badge-done">{formatDate(j.Date)}</span>
                             <span style={{fontWeight:900,color:'#1e293b'}}><Highlight text={j.TeacherName} keyword={q}/> 강사</span>
                         </div>
                         <div className="list-content"><Highlight text={j.Content} keyword={q}/></div>
@@ -1204,7 +1228,7 @@ const AbsenceAllView = ({ absences }) => {
                 filtered.map(a=>(
                     <div key={a.ID} className="list-item">
                         <div className="list-meta">
-                            <span className="badge badge-new">{a.Date}</span>
+                            <span className="badge badge-new">{formatDate(a.Date)}</span>
                             <span style={{fontWeight:900,color:'#1e293b'}}><Highlight text={a.StudentName} keyword={q}/></span>
                             {a.ClassName && <span style={{color:'#94a3b8'}}><Highlight text={a.ClassName} keyword={q}/></span>}
                             <span style={{marginLeft:'auto',color:'#94a3b8'}}><Highlight text={a.TeacherName} keyword={q}/></span>
@@ -1228,7 +1252,7 @@ const CounselAllView = ({ counsels }) => {
                 filtered.map(c=>(
                     <div key={c.ID} className="list-item">
                         <div className="list-meta">
-                            <span className="badge badge-blue">{c.Date}</span>
+                            <span className="badge badge-blue">{formatDate(c.Date)}</span>
                             <span style={{fontWeight:900,color:'#1e293b'}}><Highlight text={c.StudentName} keyword={q}/></span>
                             {c.ParentName && <span>학부모: <Highlight text={c.ParentName} keyword={q}/></span>}
                             <span style={{marginLeft:'auto',color:'#94a3b8'}}><Highlight text={c.TeacherName} keyword={q}/></span>
