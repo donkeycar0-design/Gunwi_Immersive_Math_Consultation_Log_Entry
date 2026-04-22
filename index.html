@@ -374,29 +374,21 @@ const AdminSetupScreen = ({ user, onDone }) => {
     );
 };
 
-// ━━━ 첫 로그인 셋업 화면 (강사 — 비번변경 + 담당반 선택) ━━━
+// ━━━ 첫 로그인 셋업 화면 (강사 — 담당반 선택만) ━━━
 const SetupScreen = ({ user, onDone }) => {
-    const [step,      setStep]      = useState(1); // 1:비번변경 2:담당반선택
-    const [newPw,     setNewPw]     = useState('');
-    const [confirmPw, setConfirmPw] = useState('');
-    const [classes,   setClasses]   = useState([]);
-    const [err,       setErr]       = useState('');
-    const [saving,    setSaving]    = useState(false);
+    const [classes, setClasses] = useState([]);
+    const [err,     setErr]     = useState('');
+    const [saving,  setSaving]  = useState(false);
 
     const toggleClass = id =>
         setClasses(prev => prev.includes(id) ? prev.filter(c=>c!==id) : [...prev, id]);
 
-    const handlePwNext = () => {
-        if (newPw.length < 4) { setErr('비번은 4자리 이상 입력해 주세요'); return; }
-        if (newPw !== confirmPw) { setErr('비번이 일치하지 않습니다'); return; }
-        setErr(''); setStep(2);
-    };
-
     const handleFinish = async () => {
         setSaving(true);
         try {
-            await api.post({ action:'updateTeacherPw', name:user.name, newPw });
             await api.post({ action:'updateTeacherClasses', name:user.name, classes:classes.join(',') });
+            // IsFirst 도 false 로 업데이트
+            await api.post({ action:'updateTeacherPw', name:user.name, newPw: user.pw || '1234' });
             onDone({ ...user, isFirst:false, classes:classes.join(',') });
         } catch(e) { setErr('저장 실패'); }
         finally { setSaving(false); }
@@ -407,75 +399,44 @@ const SetupScreen = ({ user, onDone }) => {
             <div className="login-box" style={{maxWidth:440}}>
                 <div className="login-logo">
                     <div className="logo-icon"><Icon name="sparkles" size={22}/></div>
-                    <div><div className="logo-title">군위몰입수학</div><div className="logo-sub">첫 로그인 설정</div></div>
+                    <div><div className="logo-title">군위몰입수학</div><div className="logo-sub">담당반 설정</div></div>
                 </div>
-
-                {/* 스텝 인디케이터 */}
-                <div style={{display:'flex',gap:8,marginBottom:28}}>
-                    {['비밀번호 변경','담당반 선택'].map((s,i)=>(
-                        <div key={i} style={{flex:1,padding:'8px 12px',borderRadius:12,background:step===i+1?'#0f172a':step>i+1?'#10b981':'#f8fafc',color:step>=i+1?'#fff':'#94a3b8',fontSize:12,fontWeight:900,textAlign:'center',transition:'all .2s'}}>
-                            {step>i+1?'✓ ':''}{s}
+                <div style={{fontSize:13,fontWeight:700,color:'#64748b',marginBottom:16,textAlign:'center'}}>
+                    <span style={{fontWeight:900,color:'#0f172a'}}>{user.name}</span> 강사님, 담당 수업을 선택해 주세요
+                    <span style={{marginLeft:8,color:'#f97316',fontWeight:900}}>{classes.length}개 선택</span>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:10,maxHeight:400,overflowY:'auto',marginBottom:16}}>
+                    {GRADE_GROUPS.map(g=>(
+                        <div key={g.grade}>
+                            <div style={{fontSize:11,fontWeight:900,color:'#64748b',marginBottom:6,padding:'3px 8px',background:'#f1f5f9',borderRadius:8,display:'inline-block'}}>{g.grade}</div>
+                            <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6}}>
+                                {g.classes.map(c=>{
+                                    const checked  = classes.includes(c.id);
+                                    const dayPart  = c.id.includes('-mw-')?'월목':'화금';
+                                    const typePart = c.id.endsWith('-s')?'수반':'학반';
+                                    return (
+                                        <button key={c.id} onClick={()=>toggleClass(c.id)} style={{
+                                            display:'flex',alignItems:'center',gap:8,padding:'10px 12px',borderRadius:12,
+                                            border:`2px solid ${checked?'#0f172a':'#f1f5f9'}`,
+                                            background:checked?'#0f172a':'#f8fafc',
+                                            color:checked?'#fff':'#64748b',
+                                            fontSize:12,fontWeight:900,transition:'all .15s',
+                                        }}>
+                                            <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${checked?'#fff':'#cbd5e1'}`,background:checked?'#f97316':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                                {checked&&<Icon name="check" size={10} style={{color:'#fff'}}/>}
+                                            </div>
+                                            {dayPart} {typePart}
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
                     ))}
                 </div>
-
-                {step === 1 && (
-                    <>
-                        <div style={{fontSize:13,fontWeight:700,color:'#64748b',marginBottom:20,textAlign:'center'}}>
-                            <span style={{fontWeight:900,color:'#0f172a'}}>{user.name}</span> 강사님, 새 비밀번호를 설정해 주세요
-                        </div>
-                        <div style={{display:'flex',flexDirection:'column',gap:10,marginBottom:16}}>
-                            <input className="login-input" type="password" placeholder="새 비밀번호 (4자리 이상)" value={newPw} onChange={e=>setNewPw(e.target.value)} style={{marginBottom:0}}/>
-                            <input className="login-input" type="password" placeholder="비밀번호 확인" value={confirmPw} onChange={e=>setConfirmPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handlePwNext()} style={{marginBottom:0}}/>
-                        </div>
-                        {err && <div className="login-err" style={{marginBottom:10}}>{err}</div>}
-                        <button className="login-btn" onClick={handlePwNext}>다음 →</button>
-                    </>
-                )}
-
-                {step === 2 && (
-                    <>
-                        <div style={{fontSize:13,fontWeight:700,color:'#64748b',marginBottom:16,textAlign:'center'}}>
-                            담당 수업을 선택해 주세요
-                            <span style={{marginLeft:8,color:'#f97316',fontWeight:900}}>{classes.length}개 선택</span>
-                        </div>
-                        <div style={{display:'flex',flexDirection:'column',gap:10,maxHeight:360,overflowY:'auto',marginBottom:16}}>
-                            {GRADE_GROUPS.map(g=>(
-                                <div key={g.grade}>
-                                    <div style={{fontSize:11,fontWeight:900,color:'#64748b',marginBottom:6,padding:'3px 8px',background:'#f1f5f9',borderRadius:8,display:'inline-block'}}>{g.grade}</div>
-                                    <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6}}>
-                                        {g.classes.map(c=>{
-                                            const checked = classes.includes(c.id);
-                                            const dayPart  = c.id.includes('-mw-')?'월목':'화금';
-                                            const typePart = c.id.endsWith('-s')?'수반':'학반';
-                                            return (
-                                                <button key={c.id} onClick={()=>toggleClass(c.id)} style={{
-                                                    display:'flex',alignItems:'center',gap:8,padding:'10px 12px',borderRadius:12,
-                                                    border:`2px solid ${checked?'#0f172a':'#f1f5f9'}`,
-                                                    background:checked?'#0f172a':'#f8fafc',
-                                                    color:checked?'#fff':'#64748b',
-                                                    fontSize:12,fontWeight:900,transition:'all .15s',
-                                                }}>
-                                                    <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${checked?'#fff':'#cbd5e1'}`,background:checked?'#f97316':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                                                        {checked&&<Icon name="check" size={10} style={{color:'#fff'}}/>}
-                                                    </div>
-                                                    {dayPart} {typePart}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        {err && <div className="login-err" style={{marginBottom:10}}>{err}</div>}
-                        <div style={{display:'flex',gap:8}}>
-                            <button onClick={()=>setStep(1)} style={{flex:1,padding:14,borderRadius:14,fontSize:14,fontWeight:900,background:'#f8fafc',color:'#94a3b8'}}>← 이전</button>
-                            <button className="login-btn" style={{flex:2,marginTop:0}} onClick={handleFinish} disabled={saving}>
-                                {saving?'저장 중...':'설정 완료 →'}
-                            </button>
-                        </div>
-                    </>
-                )}
+                {err && <div className="login-err" style={{marginBottom:10}}>{err}</div>}
+                <button className="login-btn" onClick={handleFinish} disabled={saving}>
+                    {saving?'저장 중...':'설정 완료 →'}
+                </button>
             </div>
         </div>
     );
@@ -1304,10 +1265,10 @@ const App = () => {
     const handleSetupDone = (u) => setUser(u);
 
     if (!user) return <LoginScreen onLogin={handleLogin}/>;
-    // 강사 첫 로그인 → 셋업 (비번변경 + 담당반 선택)
+    // 강사 첫 로그인 → 담당반 선택만 (비번 변경 없음)
     if (user.role==='teacher' && user.isFirst) return <SetupScreen user={user} onDone={handleSetupDone}/>;
-    // 일반 관리자 첫 로그인 → 비번만 변경 (담당반 없음)
-    if (user.role==='admin' && !user.isSuper && user.isFirst) return <AdminSetupScreen user={user} onDone={handleSetupDone}/>;
+    // 일반 관리자 첫 로그인 → 비번 변경 건너뜀 (바로 진입)
+    if (user.role==='admin' && !user.isSuper && user.isFirst) return <AdminApp user={{...user, isFirst:false}} onLogout={handleLogout}/>;
     if (user.role==='admin') return <AdminApp user={user} onLogout={handleLogout}/>;
     return <TeacherApp user={user} onLogout={handleLogout}/>;
 };
