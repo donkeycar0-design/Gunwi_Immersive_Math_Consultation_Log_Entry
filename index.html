@@ -268,13 +268,15 @@ const LoginScreen = ({ onLogin }) => {
                 return;
             }
 
-            // 2. 일반 관리자 — 코드에 고정된 계정 확인
+            // 2. 일반 관리자 — Sheets Admins 탭에서 확인
             const ADMIN_LIST = ['김남탁','김유식','사공은영','김윤희'];
             if (ADMIN_LIST.includes(trimName)) {
-                // 비번은 로컬스토리지에 저장 (GAS 저장 안 함)
-                const savedPw = localStorage.getItem('admin_pw_' + trimName) || '1234';
-                const isFirst = localStorage.getItem('admin_first_' + trimName) !== 'done';
-                if (savedPw !== pw) { setErr('비밀번호가 틀렸습니다'); return; }
+                const admins = await api.get('getAdmins');
+                const foundAdmin = Array.isArray(admins) ? admins.find(a => String(a.Name||a.name) === trimName) : null;
+                if (!foundAdmin) { setErr('관리자 계정을 찾을 수 없습니다. 관리자에게 문의하세요'); return; }
+                const adminPw = String(foundAdmin.Password || foundAdmin.password || '1234');
+                const isFirst = String(foundAdmin.IsFirst || foundAdmin.isFirst) === 'true' || String(foundAdmin.IsFirst || foundAdmin.isFirst) === 'TRUE';
+                if (adminPw !== pw) { setErr('비밀번호가 틀렸습니다'); return; }
                 onLogin({ role:'admin', name:trimName, isFirst:isFirst, isSuper:false });
                 return;
             }
@@ -339,11 +341,9 @@ const AdminSetupScreen = ({ user, onDone }) => {
         if (newPw !== confirmPw) { setErr('비번이 일치하지 않습니다'); return; }
         setSaving(true);
         try {
-            // 관리자 비번은 로컬스토리지에 저장
-            localStorage.setItem('admin_pw_' + user.name, newPw);
-            localStorage.setItem('admin_first_' + user.name, 'done');
+            await api.post({ action:'updateAdminPw', name:user.name, newPw });
             onDone({ ...user, isFirst:false });
-        } catch(e) { setErr('저장 실패'); }
+        } catch(e) { setErr('저장 실패: ' + e.message); }
         finally { setSaving(false); }
     };
 
@@ -1066,11 +1066,12 @@ const TeacherMgr = ({ teachers, admins, showToast, reload }) => {
         } catch(e){ showToast('초기화 실패','error'); }
     };
 
-    const handleResetAdminPw = (name) => {
+    const handleResetAdminPw = async (name) => {
         if (!confirm(`${name} 관리자의 비번을 1234로 초기화할까요?`)) return;
-        localStorage.setItem('admin_pw_' + name, '1234');
-        localStorage.removeItem('admin_first_' + name);
-        showToast(`${name} 관리자 비번이 1234로 초기화됐습니다`);
+        try {
+            await api.post({ action:'resetAdminPw', name });
+            showToast(`${name} 관리자 비번이 1234로 초기화됐습니다`);
+        } catch(e){ showToast('초기화 실패','error'); }
     };
 
     const handleDeleteTeacher = async (id, name) => {
