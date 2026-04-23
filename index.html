@@ -830,7 +830,8 @@ const JournalView = ({ journals, user, today, showToast, reload }) => {
         setSaving(true);
         try {
             if (editTarget) {
-                await api.post({ action:'deleteJournal', id:editTarget });
+                console.log('deleteJournal id:', editTarget); // 디버그
+                await api.post({ action:'deleteJournal', id:String(editTarget) });
                 await api.post({ action:'addJournal', date:selDate, teacherName:user.name, content:content.trim() });
                 showToast('일지가 수정되었습니다');
                 setEditTarget(null);
@@ -997,7 +998,8 @@ const CounselView = ({ counsels, user, today, showToast, reload }) => {
         setSaving(true);
         try {
             if (editTarget) {
-                await api.post({ action:'deleteCounsel', id:editTarget });
+                console.log('deleteCounsel id:', editTarget); // 디버그
+                await api.post({ action:'deleteCounsel', id:String(editTarget) });
                 await api.post({ action:'addCounsel', ...form, teacherName:user.name });
                 showToast('상담 기록이 수정되었습니다');
                 setEditTarget(null);
