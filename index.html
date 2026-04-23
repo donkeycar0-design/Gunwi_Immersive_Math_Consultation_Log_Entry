@@ -216,7 +216,7 @@ const getClassLabels = (classStr) => {
 };
 
 // ━━━ ⚙️ Google Apps Script 배포 URL ━━━
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzu2np9Ews-61awbMHi0OcSt0o9oCvTUFAa3WFrjWoByr3taHf_zML4d2TGr7h72Fe6Vw/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwJBnDd2A-siHlsbHcrVKiRuODyk33WV47Ep5wrpzCQwUTP0X-RGSYxzAUJzhQBd7z3rA/exec';
 
 // ── 실제 GAS API ──
 const api = {
@@ -837,8 +837,10 @@ const JournalView = ({ journals, user, today, showToast, reload }) => {
 
     const handleDelete = async (id) => {
         if (!confirm('이 일지를 삭제하시겠습니까?')) return;
+        const safeId = String(id||'').trim();
+        if (!safeId) { showToast('삭제 실패: ID 없음','error'); return; }
         try {
-            await api.post({ action:'deleteJournal', id:String(id) });
+            await api.post({ action:'deleteJournal', id:safeId });
             showToast('삭제되었습니다'); reload();
         } catch(e){ showToast('삭제 실패','error'); }
     };
@@ -932,7 +934,9 @@ const AbsenceView = ({ absences, user, today, showToast, reload }) => {
                         <div style={{position:'absolute',top:12,right:12}}>
                             <button onClick={async()=>{
                                 if(!confirm('이 결석 사유를 삭제하시겠습니까?')) return;
-                                try { await api.post({action:'deleteAbsence',id:String(a.ID)}); showToast('삭제되었습니다'); reload(); }
+                                const safeId = String(a.ID||a.id||'').trim();
+                                if (!safeId) { showToast('삭제 실패: ID 없음','error'); return; }
+                                try { await api.post({action:'deleteAbsence',id:safeId}); showToast('삭제되었습니다'); reload(); }
                                 catch(e){ showToast('삭제 실패','error'); }
                             }} style={{color:'#cbd5e1',padding:6,borderRadius:8,background:'#f8fafc'}} title="삭제">
                                 <Icon name="trash" size={13}/>
@@ -994,8 +998,10 @@ const CounselView = ({ counsels, user, today, showToast, reload }) => {
 
     const handleDelete = async (id) => {
         if (!confirm('이 상담 기록을 삭제하시겠습니까?')) return;
+        const safeId = String(id||'').trim();
+        if (!safeId) { showToast('삭제 실패: ID 없음','error'); return; }
         try {
-            await api.post({ action:'deleteCounsel', id:String(id) });
+            await api.post({ action:'deleteCounsel', id:safeId });
             showToast('삭제되었습니다'); reload();
         } catch(e){ showToast('삭제 실패','error'); }
     };
