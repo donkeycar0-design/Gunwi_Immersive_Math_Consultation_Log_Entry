@@ -262,26 +262,21 @@ const LoginScreen = ({ onLogin }) => {
         try {
             const trimName = name.trim();
 
-            // 1. 슈퍼 관리자 — 이름 없이 비번만
+            // 1. 슈퍼 관리자 — 이름 없이 비번만 (l2387008)
             if (!trimName && pw === SUPER_ADMIN_PW) {
                 onLogin({ role:'admin', name:'관리자', isSuper:true });
                 return;
             }
 
-            // 2. 일반 관리자 — Sheets Admins 탭에서 확인
+            // 2. 일반 관리자 — 이름 + 고정 비번 321!
             const ADMIN_LIST = ['김남탁','김유식','사공은영','김윤희'];
             if (ADMIN_LIST.includes(trimName)) {
-                const admins = await api.get('getAdmins');
-                const foundAdmin = Array.isArray(admins) ? admins.find(a => String(a.Name||a.name) === trimName) : null;
-                if (!foundAdmin) { setErr('관리자 계정을 찾을 수 없습니다. 관리자에게 문의하세요'); return; }
-                const adminPw = String(foundAdmin.Password || foundAdmin.password || '1234');
-                const isFirst = String(foundAdmin.IsFirst || foundAdmin.isFirst) === 'true' || String(foundAdmin.IsFirst || foundAdmin.isFirst) === 'TRUE';
-                if (adminPw !== pw) { setErr('비밀번호가 틀렸습니다'); return; }
-                onLogin({ role:'admin', name:trimName, isFirst:isFirst, isSuper:false });
+                if (pw !== '321!') { setErr('비밀번호가 틀렸습니다'); return; }
+                onLogin({ role:'admin', name:trimName, isFirst:false, isSuper:false });
                 return;
             }
 
-            // 3. 강사 — 이름 + 비번
+            // 3. 강사 — 이름 + 비번 (Sheets 연동)
             if (!trimName) { setErr('이름을 입력해 주세요'); return; }
             const teachers = await api.get('getTeachers');
             const foundTeacher = Array.isArray(teachers) ? teachers.find(t=>t.Name===trimName) : null;
@@ -319,10 +314,10 @@ const LoginScreen = ({ onLogin }) => {
                 </button>
                 {err && <div className="login-err">{err}</div>}
                 <div style={{marginTop:16,padding:'12px 16px',background:'#fff7ed',borderRadius:14,fontSize:12,fontWeight:700,color:'#92400e',lineHeight:1.8}}>
-                    <div style={{fontWeight:900,marginBottom:6}}>첫 로그인 안내</div>
-                    <div>강사 · 관리자: <span style={{color:'#f97316',fontWeight:900}}>이름 / 1234</span></div>
+                    <div style={{fontWeight:900,marginBottom:6}}>로그인 안내</div>
+                    <div>강사: <span style={{color:'#f97316',fontWeight:900}}>이름 / 1234</span></div>
+                    <div>관리자: <span style={{color:'#f97316',fontWeight:900}}>이름 / 321!</span></div>
                     <div>슈퍼관리자: <span style={{color:'#0f172a',fontWeight:900}}>비번만 입력</span></div>
-                    <div style={{color:'#a16207',marginTop:4,fontSize:11}}>로그인 후 비번 변경 필수</div>
                 </div>
             </div>
         </div>
