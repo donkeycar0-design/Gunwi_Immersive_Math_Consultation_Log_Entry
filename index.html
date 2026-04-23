@@ -447,7 +447,25 @@ const TeacherApp = ({ user, onLogout }) => {
     const [loading,    setLoading]   = useState(true);
     const [toast,      setToast]     = useState(null);
     const [sidebarOpen,setSidebar]   = useState(false);
+    const [showClassModal, setShowClassModal] = useState(false);
+    const [myClasses,  setMyClasses] = useState(
+        (user.classes||'').split(',').filter(Boolean)
+    );
+    const [savingClass, setSavingClass] = useState(false);
     const showToast = (m,t='success') => setToast({message:m,type:t});
+
+    const toggleClass = id =>
+        setMyClasses(prev => prev.includes(id) ? prev.filter(c=>c!==id) : [...prev, id]);
+
+    const handleClassSave = async () => {
+        setSavingClass(true);
+        try {
+            await api.post({ action:'updateTeacherClasses', name:user.name, classes:myClasses.join(',') });
+            showToast('담당반이 변경되었습니다');
+            setShowClassModal(false);
+        } catch(e){ showToast('저장 실패','error'); }
+        finally { setSavingClass(false); }
+    };
 
     const loadAll = useCallback(async () => {
         setLoading(true);
@@ -468,9 +486,10 @@ const TeacherApp = ({ user, onLogout }) => {
     useEffect(() => { loadAll(); }, []);
 
     const today = getKSTDate();
+    const userWithClasses = { ...user, classes: myClasses.join(',') };
 
     const navItems = [
-        {id:'notice',  label:'공지사항',   icon:'bell',   active:'active-orange'},
+        {id:'notice',  label:'공지사항',   icon:'bell',   active:'active-blue'},
         {id:'journal', label:'근무 일지',   icon:'pencil', active:'active-green'},
         {id:'absence', label:'결석 사유',   icon:'alert',  active:'active-red'},
         {id:'counsel', label:'학부모 상담', icon:'chat',   active:'active-purple'},
@@ -485,7 +504,7 @@ const TeacherApp = ({ user, onLogout }) => {
             <aside className={`sidebar ${sidebarOpen?'open':''}`}>
                 <div className="sidebar-logo">
                     <div className="logo-icon"><Icon name="sparkles" size={22}/></div>
-                    <div><div className="logo-title">군위몰입수학</div><div className="logo-sub">강사 포털</div></div>
+                    <div><div className="logo-title">군위몰입수학</div><div className="logo-sub">Teacher Portal</div></div>
                 </div>
                 <nav className="nav">
                     {navItems.map(btn => (
@@ -500,9 +519,14 @@ const TeacherApp = ({ user, onLogout }) => {
                         <div className="user-avatar">{user.name[0]}</div>
                         <div>
                             <div style={{fontSize:13,fontWeight:900,color:'#1e293b'}}>{user.name} 강사</div>
-                            <div style={{fontSize:11,fontWeight:700,color:'#94a3b8'}}>로그인 중</div>
+                            <div style={{fontSize:11,fontWeight:700,color:'#94a3b8'}}>담당 {myClasses.length}개 반</div>
                         </div>
                     </div>
+                    {/* ✅ 담당반 변경 버튼 */}
+                    <button onClick={()=>setShowClassModal(true)}
+                        style={{display:'flex',alignItems:'center',gap:6,padding:'10px 14px',borderRadius:14,fontSize:12,fontWeight:700,color:'#f97316',width:'100%',background:'#fff7ed'}}>
+                        <Icon name="pencil" size={14}/> 담당반 변경
+                    </button>
                     <button onClick={onLogout} style={{display:'flex',alignItems:'center',gap:6,padding:'10px 14px',borderRadius:14,fontSize:12,fontWeight:700,color:'#94a3b8',width:'100%'}}>
                         <Icon name="logout" size={14}/> 로그아웃
                     </button>
@@ -521,13 +545,59 @@ const TeacherApp = ({ user, onLogout }) => {
                 {loading ? <div className="full-center"><div className="spinner"/></div> : (
                     <>
                         {view==='notice'  && <NoticeView notices={notices} isAdmin={false}/>}
-                        {view==='journal' && <JournalView journals={journals} user={user} today={today} showToast={showToast} reload={loadAll}/>}
-                        {view==='absence' && <AbsenceView absences={absences} user={user} today={today} showToast={showToast} reload={loadAll}/>}
-                        {view==='counsel' && <CounselView counsels={counsels} user={user} today={today} showToast={showToast} reload={loadAll}/>}
+                        {view==='journal' && <JournalView journals={journals} user={userWithClasses} today={today} showToast={showToast} reload={loadAll}/>}
+                        {view==='absence' && <AbsenceView absences={absences} user={userWithClasses} today={today} showToast={showToast} reload={loadAll}/>}
+                        {view==='counsel' && <CounselView counsels={counsels} user={userWithClasses} today={today} showToast={showToast} reload={loadAll}/>}
                     </>
                 )}
             </main>
             {toast && <Toast {...toast} onDone={()=>setToast(null)}/>}
+
+            {/* ✅ 담당반 변경 모달 */}
+            {showClassModal && (
+                <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowClassModal(false)}>
+                    <div className="modal-box" style={{maxWidth:480}}>
+                        <div className="modal-title">담당반 변경</div>
+                        <div style={{fontSize:13,fontWeight:700,color:'#64748b',marginBottom:4}}>
+                            현재 선택: <span style={{color:'#f97316',fontWeight:900}}>{myClasses.length}개 반</span>
+                        </div>
+                        <div style={{display:'flex',flexDirection:'column',gap:10,maxHeight:400,overflowY:'auto'}}>
+                            {GRADE_GROUPS.map(g=>(
+                                <div key={g.grade}>
+                                    <div style={{fontSize:11,fontWeight:900,color:'#64748b',marginBottom:6,padding:'3px 8px',background:'#f1f5f9',borderRadius:8,display:'inline-block'}}>{g.grade}</div>
+                                    <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:6}}>
+                                        {g.classes.map(c=>{
+                                            const checked  = myClasses.includes(c.id);
+                                            const dayPart  = c.id.includes('-mw-')?'월목':'화금';
+                                            const typePart = c.id.endsWith('-s')?'수반':'학반';
+                                            return (
+                                                <button key={c.id} onClick={()=>toggleClass(c.id)} style={{
+                                                    display:'flex',alignItems:'center',gap:8,padding:'10px 12px',borderRadius:12,
+                                                    border:`2px solid ${checked?'#f97316':'#f1f5f9'}`,
+                                                    background:checked?'#fff7ed':'#f8fafc',
+                                                    color:checked?'#f97316':'#64748b',
+                                                    fontSize:12,fontWeight:900,transition:'all .15s',
+                                                }}>
+                                                    <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${checked?'#f97316':'#cbd5e1'}`,background:checked?'#f97316':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                                        {checked&&<Icon name="check" size={10}/>}
+                                                    </div>
+                                                    {dayPart} {typePart}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="modal-btns">
+                            <button className="btn-cancel" onClick={()=>setShowClassModal(false)}>취소</button>
+                            <button className="btn-confirm" style={{background:'#f97316'}} onClick={handleClassSave} disabled={savingClass}>
+                                {savingClass?'저장 중...':'변경 저장'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
