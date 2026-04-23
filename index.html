@@ -720,31 +720,47 @@ const AdminApp = ({ user, onLogout }) => {
 };
 
 // ━━━ 공지사항 뷰 ━━━
-const NoticeView = ({ notices, isAdmin, showToast, reload }) => {
-    const [showModal, setShowModal] = useState(false);
-    const [form, setForm] = useState({ title:'', content:'' });
-    const [saving,    setSaving]    = useState(false);
-    const [editTarget, setEditTarget] = useState(null); // 수정할 공지
+const NoticeView = ({ notices: initialNotices, isAdmin, showToast, reload }) => {
+    const [notices,    setNotices]   = useState(initialNotices);
+    const [showModal,  setShowModal] = useState(false);
+    const [form,       setForm]      = useState({ title:'', content:'' });
+    const [saving,     setSaving]    = useState(false);
+    const [editTarget, setEditTarget]= useState(null);
+
+    // 부모에서 notices 바뀌면 동기화
+    useEffect(() => { setNotices(initialNotices); }, [initialNotices]);
 
     const sorted = [...notices].sort((a,b) => new Date(b.CreatedAt)-new Date(a.CreatedAt));
 
     const handleSave = async () => {
         if (!form.title.trim()||!form.content.trim()) return;
         setSaving(true);
-        try {
-            if (editTarget) {
-                // 수정: 기존 삭제 후 새로 추가
+        const tempId = 'temp-' + Date.now();
+        const newNotice = { ID:tempId, Title:form.title, Content:form.content, CreatedAt:new Date().toISOString() };
+
+        if (editTarget) {
+            // ✅ 화면 즉시 반영
+            setNotices(prev => prev.map(n => n.ID===editTarget ? newNotice : n));
+            setForm({title:'',content:''}); setShowModal(false); setEditTarget(null);
+            showToast('공지사항이 수정되었습니다');
+            // 백그라운드 저장
+            try {
                 await api.post({ action:'deleteNotice', id:editTarget });
                 await api.post({ action:'addNotice', ...form });
-                showToast('공지사항이 수정되었습니다');
-                setEditTarget(null);
-            } else {
+                reload(); // 실제 ID로 교체
+            } catch(e){ showToast('저장 실패','error'); reload(); }
+        } else {
+            // ✅ 화면 즉시 반영
+            setNotices(prev => [newNotice, ...prev]);
+            setForm({title:'',content:''}); setShowModal(false);
+            showToast('공지사항이 등록되었습니다');
+            // 백그라운드 저장
+            try {
                 await api.post({ action:'addNotice', ...form });
-                showToast('공지사항이 등록되었습니다');
-            }
-            setForm({title:'',content:''}); setShowModal(false); reload();
-        } catch(e){ showToast('저장 실패','error'); }
-        finally { setSaving(false); }
+                reload();
+            } catch(e){ showToast('저장 실패','error'); reload(); }
+        }
+        setSaving(false);
     };
 
     const handleEdit = (n) => {
@@ -755,8 +771,12 @@ const NoticeView = ({ notices, isAdmin, showToast, reload }) => {
 
     const handleDelete = async (id) => {
         if (!confirm('삭제하시겠습니까?')) return;
-        try { await api.post({action:'deleteNotice',id}); showToast('삭제되었습니다'); reload(); }
-        catch(e){ showToast('삭제 실패','error'); }
+        // ✅ 화면 즉시 반영
+        setNotices(prev => prev.filter(n => n.ID !== id));
+        showToast('삭제되었습니다');
+        // 백그라운드 삭제
+        try { await api.post({action:'deleteNotice',id}); reload(); }
+        catch(e){ showToast('삭제 실패','error'); reload(); }
     };
 
     return (
@@ -814,11 +834,14 @@ const NoticeView = ({ notices, isAdmin, showToast, reload }) => {
 };
 
 // ━━━ 근무 일지 (강사) ━━━
-const JournalView = ({ journals, user, today, showToast, reload }) => {
+const JournalView = ({ journals: initialJournals, user, today, showToast, reload }) => {
+    const [journals,  setJournals]  = useState(initialJournals);
     const [showModal, setShowModal] = useState(false);
     const [content,   setContent]   = useState('');
     const [selDate,   setSelDate]   = useState(today);
     const [saving,    setSaving]    = useState(false);
+
+    useEffect(() => { setJournals(initialJournals); }, [initialJournals]);
 
     const myJournals = useMemo(() =>
         journals.filter(j=>j.TeacherName===user.name)
@@ -827,22 +850,28 @@ const JournalView = ({ journals, user, today, showToast, reload }) => {
     const handleSave = async () => {
         if (!content.trim()) return;
         setSaving(true);
-        try {
-            await api.post({ action:'addJournal', date:selDate, teacherName:user.name, content:content.trim() });
-            showToast('일지가 저장되었습니다');
-            setContent(''); setShowModal(false); reload();
-        } catch(e){ showToast('저장 실패','error'); }
-        finally { setSaving(false); }
+        const tempId = 'temp-' + Date.now();
+        const newJ = { ID:tempId, Date:selDate, TeacherName:user.name, Content:content.trim(), CreatedAt:new Date().toISOString() };
+        // ✅ 화면 즉시 반영
+        setJournals(prev => [newJ, ...prev]);
+        setContent(''); setShowModal(false);
+        showToast('일지가 저장되었습니다');
+        // 백그라운드 저장
+        try { await api.post({ action:'addJournal', date:selDate, teacherName:user.name, content:content.trim() }); reload(); }
+        catch(e){ showToast('저장 실패','error'); reload(); }
+        setSaving(false);
     };
 
     const handleDelete = async (id) => {
         if (!confirm('이 일지를 삭제하시겠습니까?')) return;
         const safeId = String(id||'').trim();
         if (!safeId) { showToast('삭제 실패: ID 없음','error'); return; }
-        try {
-            await api.post({ action:'deleteJournal', id:safeId });
-            showToast('삭제되었습니다'); reload();
-        } catch(e){ showToast('삭제 실패','error'); }
+        // ✅ 화면 즉시 반영
+        setJournals(prev => prev.filter(j => j.ID !== id));
+        showToast('삭제되었습니다');
+        // 백그라운드 삭제
+        try { await api.post({ action:'deleteJournal', id:safeId }); reload(); }
+        catch(e){ showToast('삭제 실패','error'); reload(); }
     };
 
     return (
@@ -888,12 +917,14 @@ const JournalView = ({ journals, user, today, showToast, reload }) => {
 };
 
 // ━━━ 결석 사유 (강사) ━━━
-const AbsenceView = ({ absences, user, today, showToast, reload }) => {
+const AbsenceView = ({ absences: initialAbsences, user, today, showToast, reload }) => {
+    const [absences,  setAbsences]  = useState(initialAbsences);
     const [showModal, setShowModal] = useState(false);
-    const [form, setForm] = useState({ date:today, studentName:'', className:'', reason:'' });
-    const [saving, setSaving] = useState(false);
+    const [form,      setForm]      = useState({ date:today, studentName:'', className:'', reason:'' });
+    const [saving,    setSaving]    = useState(false);
 
-    // 이 강사의 담당반 목록 (로그인 시 전달받은 classes 사용)
+    useEffect(() => { setAbsences(initialAbsences); }, [initialAbsences]);
+
     const myClasses = useMemo(() => {
         if (!user.classes) return [];
         return user.classes.split(',').map(id=>ALL_CLASSES.find(c=>c.id===id.trim())).filter(Boolean);
@@ -906,12 +937,16 @@ const AbsenceView = ({ absences, user, today, showToast, reload }) => {
     const handleSave = async () => {
         if (!form.studentName.trim()||!form.reason.trim()) return;
         setSaving(true);
-        try {
-            await api.post({ action:'addAbsence', ...form, teacherName:user.name });
-            showToast('결석 사유가 저장되었습니다');
-            setForm({date:today,studentName:'',className:'',reason:''}); setShowModal(false); reload();
-        } catch(e){ showToast('저장 실패','error'); }
-        finally { setSaving(false); }
+        const tempId = 'temp-' + Date.now();
+        const newA = { ID:tempId, ...form, TeacherName:user.name, CreatedAt:new Date().toISOString() };
+        // ✅ 화면 즉시 반영
+        setAbsences(prev => [newA, ...prev]);
+        setForm({date:today,studentName:'',className:'',reason:''}); setShowModal(false);
+        showToast('결석 사유가 저장되었습니다');
+        // 백그라운드 저장
+        try { await api.post({ action:'addAbsence', ...form, teacherName:user.name }); reload(); }
+        catch(e){ showToast('저장 실패','error'); reload(); }
+        setSaving(false);
     };
 
     return (
@@ -936,8 +971,11 @@ const AbsenceView = ({ absences, user, today, showToast, reload }) => {
                                 if(!confirm('이 결석 사유를 삭제하시겠습니까?')) return;
                                 const safeId = String(a.ID||a.id||'').trim();
                                 if (!safeId) { showToast('삭제 실패: ID 없음','error'); return; }
-                                try { await api.post({action:'deleteAbsence',id:safeId}); showToast('삭제되었습니다'); reload(); }
-                                catch(e){ showToast('삭제 실패','error'); }
+                                // ✅ 화면 즉시 반영
+                                setAbsences(prev => prev.filter(x => x.ID !== a.ID));
+                                showToast('삭제되었습니다');
+                                try { await api.post({action:'deleteAbsence',id:safeId}); reload(); }
+                                catch(e){ showToast('삭제 실패','error'); reload(); }
                             }} style={{color:'#cbd5e1',padding:6,borderRadius:8,background:'#f8fafc'}} title="삭제">
                                 <Icon name="trash" size={13}/>
                             </button>
@@ -976,10 +1014,13 @@ const AbsenceView = ({ absences, user, today, showToast, reload }) => {
 };
 
 // ━━━ 학부모 상담 (강사) ━━━
-const CounselView = ({ counsels, user, today, showToast, reload }) => {
+const CounselView = ({ counsels: initialCounsels, user, today, showToast, reload }) => {
+    const [counsels,  setCounsels]  = useState(initialCounsels);
     const [showModal, setShowModal] = useState(false);
     const [form,      setForm]      = useState({ date:today, studentName:'', parentName:'', content:'' });
     const [saving,    setSaving]    = useState(false);
+
+    useEffect(() => { setCounsels(initialCounsels); }, [initialCounsels]);
 
     const myCounsels = useMemo(() =>
         counsels.filter(c=>c.TeacherName===user.name)
@@ -988,22 +1029,28 @@ const CounselView = ({ counsels, user, today, showToast, reload }) => {
     const handleSave = async () => {
         if (!form.studentName.trim()||!form.content.trim()) return;
         setSaving(true);
-        try {
-            await api.post({ action:'addCounsel', ...form, teacherName:user.name });
-            showToast('상담 기록이 저장되었습니다');
-            setForm({date:today,studentName:'',parentName:'',content:''}); setShowModal(false); reload();
-        } catch(e){ showToast('저장 실패','error'); }
-        finally { setSaving(false); }
+        const tempId = 'temp-' + Date.now();
+        const newC = { ID:tempId, Date:form.date, StudentName:form.studentName, ParentName:form.parentName||'', Content:form.content, TeacherName:user.name, CreatedAt:new Date().toISOString() };
+        // ✅ 화면 즉시 반영
+        setCounsels(prev => [newC, ...prev]);
+        setForm({date:today,studentName:'',parentName:'',content:''}); setShowModal(false);
+        showToast('상담 기록이 저장되었습니다');
+        // 백그라운드 저장
+        try { await api.post({ action:'addCounsel', ...form, teacherName:user.name }); reload(); }
+        catch(e){ showToast('저장 실패','error'); reload(); }
+        setSaving(false);
     };
 
     const handleDelete = async (id) => {
         if (!confirm('이 상담 기록을 삭제하시겠습니까?')) return;
         const safeId = String(id||'').trim();
         if (!safeId) { showToast('삭제 실패: ID 없음','error'); return; }
-        try {
-            await api.post({ action:'deleteCounsel', id:safeId });
-            showToast('삭제되었습니다'); reload();
-        } catch(e){ showToast('삭제 실패','error'); }
+        // ✅ 화면 즉시 반영
+        setCounsels(prev => prev.filter(c => c.ID !== id));
+        showToast('삭제되었습니다');
+        // 백그라운드 삭제
+        try { await api.post({ action:'deleteCounsel', id:safeId }); reload(); }
+        catch(e){ showToast('삭제 실패','error'); reload(); }
     };
 
     return (
